@@ -1,0 +1,44 @@
+services:
+  attestation-enclave:
+    image: ghcr.io/lazarusprotocol/attestation-enclave:latest
+    build:
+      context: .
+      target: attestation-enclave
+    command: ["python", "-m", "attestation.server"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      LAZARUS_ENCLAVE_HOST: ${LAZARUS_ENCLAVE_HOST:-0.0.0.0}
+      LAZARUS_ENCLAVE_PORT: ${LAZARUS_ENCLAVE_PORT:-8085}
+      LAZARUS_MAX_HOURLY_OUTFLOW: ${LAZARUS_MAX_HOURLY_OUTFLOW:-5000000000}
+      LAZARUS_SIGNING_MODE: ${LAZARUS_SIGNING_MODE:-frost_2_of_3}
+      LAZARUS_ORACLE_SIGNING_SEED_HEX: ${LAZARUS_ORACLE_SIGNING_SEED_HEX:-2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${LAZARUS_ENCLAVE_PORT:-8085}:8085"
+    restart: unless-stopped
+
+  keeper-daemon:
+    image: ghcr.io/lazarusprotocol/keeper-daemon:latest
+    build:
+      context: .
+      target: keeper-daemon
+    command: ["python", "-m", "keeper.cli"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      LAZARUS_KEEPER_SECRET: ${LAZARUS_KEEPER_SECRET:-SBZ7T5X23Y7EXAMPLEKEEPERSECRETKEY00000000000000000000000}
+      LAZARUS_INDEXER_API_URL: ${LAZARUS_DOCKER_INDEXER_URL:-http://host.docker.internal:8000}
+      LAZARUS_RPC_URL: ${LAZARUS_RPC_URL:-https://soroban-testnet.stellar.org}
+      LAZARUS_NETWORK_PASSPHRASE: ${LAZARUS_NETWORK_PASSPHRASE:-Test SDF Network ; September 2015}
+      LAZARUS_VAULT_CONTRACT_ID: ${LAZARUS_VAULT_CONTRACT_ID:-CCWAH7BVPGYOEBPRFWPZIONBYUCCQH7OARGZLOD6ZV66SOAFBVA2DHD5}
+      LAZARUS_BUFFER_FLUSH_INTERVAL: ${LAZARUS_BUFFER_FLUSH_INTERVAL:-600}
+      LAZARUS_DEV_STUB_MODE: ${LAZARUS_DEV_STUB_MODE:-true}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - attestation-enclave
+    restart: unless-stopped

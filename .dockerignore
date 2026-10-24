@@ -1,0 +1,21 @@
+# Python virtual environments & bytecode
+.venv
+venv
+env
+__pycache__
+*.py[cod]
+*$py.class
+
+# Testing & logs
+.pytest_cache
+.coverage
+*.log
+
+# Git, IDE & local environment secrets
+.git
+.gitignore
+.vscode
+.idea
+.DS_Store
+.env
+.env.local

@@ -1,0 +1,125 @@
+name: Keeper Daemon & FROST Signer Services CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  KEEPER_IMAGE: ghcr.io/lazarusprotocol/keeper-daemon
+  ENCLAVE_IMAGE: ghcr.io/lazarusprotocol/attestation-enclave
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  unit-tests-and-docker:
+    name: Keeper & Attestation Enclave Unit Tests + GHCR Packages
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify Python syntax across keeper, attestation, and common modules
+        run: python -m compileall -q keeper attestation common tests
+
+      - name: Run Keeper & FROST Attestation unit test suite
+        env:
+          PYTHONPATH: .
+        run: python -m unittest discover -s tests -p "test_*.py" -v
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata for Keeper Daemon
+        id: meta-keeper
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.KEEPER_IMAGE }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-
+
+      - name: Build and push Keeper Daemon image to GHCR
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: keeper-daemon
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta-keeper.outputs.tags }}
+          labels: ${{ steps.meta-keeper.outputs.labels }}
+          cache-from: type=gha,scope=keeper-daemon
+          cache-to: type=gha,mode=max,scope=keeper-daemon
+
+      - name: Extract Docker metadata for Attestation Enclave
+        id: meta-enclave
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.ENCLAVE_IMAGE }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-
+
+      - name: Build and push Attestation Enclave image to GHCR
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: attestation-enclave
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta-enclave.outputs.tags }}
+          labels: ${{ steps.meta-enclave.outputs.labels }}
+          cache-from: type=gha,scope=attestation-enclave
+          cache-to: type=gha,mode=max,scope=attestation-enclave
+
+      - name: Publish GitHub Release for Keeper & Attestation Enclave
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'v0.1.0' }}
+          name: "Lazarus Runtime Services ${{ github.ref_type == 'tag' && github.ref_name || 'v0.1.0' }}"
+          generate_release_notes: true
+          body: |
+            ### Lazarus Protocol Runtime Container Packages
+            - **Keeper Node Daemon:** `ghcr.io/lazarusprotocol/keeper-daemon:latest`
+            - **Attestation Signer Enclave (2-of-3 FROST):** `ghcr.io/lazarusprotocol/attestation-enclave:latest`
+
+            #### Quickstart
+            ```bash
+            docker pull ghcr.io/lazarusprotocol/keeper-daemon:latest
+            docker pull ghcr.io/lazarusprotocol/attestation-enclave:latest
+            docker compose up -d
+            ```
+          files: |
+            docker-compose.yml
+            .env.example
